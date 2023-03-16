@@ -132,6 +132,7 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
                     user, cpu, gpu, mem, jobid = line.split()
                     jobid = jobid.split('_')[0]
                     gpu = job_info[jobid]['tres']['gres/gpu']
+                    mem = job_info[jobid]['tres']['mem']
     
                     recommended_cpu = int(info['cfg_tres']['cpu']) / int(info['cfg_tres']['gres/gpu']) if int(info['cfg_tres']['gres/gpu']) > 0 else int(info['cfg_tres']['cpu'])
                     recommended_cpu = int(recommended_cpu) * int(gpu) if int(gpu) > 0 else int(recommended_cpu)
