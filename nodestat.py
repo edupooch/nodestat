@@ -49,7 +49,11 @@ def get_slurm_node_info():
             else:
                 alloc_tres = parse_tres(line)
             node_info[node_name]['alloc_tres'] = alloc_tres
-
+        #status
+        elif line.startswith('State'):
+            state = line.split('=')[1].split(' ')[0].strip()
+            node_info[node_name]['state'] = state
+    
     return node_info
 
 def parse_mem(mem_str):
@@ -116,6 +120,12 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
         available_mem = "\033[32m" + str(available_mem) + "\033[0m"
 
     available_mem = f"{available_mem}{total_mem}"
+    state = info['state']
+
+    if state != 'IDLE' and state != 'MIXED' and state != 'ALLOCATED':
+        available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+        available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
+        available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
 
     
     out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs else " ")
