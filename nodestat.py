@@ -58,9 +58,9 @@ def get_slurm_node_info():
 
 def parse_mem(mem_str):
     if mem_str.endswith("M"):
-        mem = int(mem_str[:-1]) / 1024
+        mem = int(mem_str[:-1]) / 1000
     elif mem_str.endswith("K"):
-        mem = int(mem_str[:-1]) / 1024 / 1024
+        mem = int(mem_str[:-1]) / 1000 / 1000
     else:
         mem = int(mem_str[:-1])
     return int(mem)
