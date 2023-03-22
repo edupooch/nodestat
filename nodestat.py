@@ -58,11 +58,11 @@ def get_slurm_node_info():
 
 def parse_mem(mem_str):
     if mem_str.endswith("M"):
-        mem = int(mem_str[:-1]) / 1000
+        mem = float(mem_str[:-1]) / 1000
     elif mem_str.endswith("K"):
-        mem = int(mem_str[:-1]) / 1000 / 1000
+        mem = float(mem_str[:-1]) / 1000 / 1000
     else:
-        mem = int(mem_str[:-1])
+        mem = float(mem_str[:-1])
     return int(mem)
 
 def get_slutm_jobs():
@@ -143,8 +143,11 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
                     jobid = jobid.split('_')[0]
                     gpu = job_info[jobid]['tres']['gres/gpu']
                     mem = job_info[jobid]['tres']['mem']
-    
-                    recommended_cpu = int(info['cfg_tres']['cpu']) / int(info['cfg_tres']['gres/gpu']) if int(info['cfg_tres']['gres/gpu']) > 0 else int(info['cfg_tres']['cpu'])
+                    
+                    total_gpu = info['cfg_tres']['gres/gpu']
+
+
+                    recommended_cpu = int(info['cfg_tres']['cpu']) / int(total_gpu) if int(total_gpu) > 0 else int(info['cfg_tres']['cpu'])
                     recommended_cpu = int(recommended_cpu) * int(gpu) if int(gpu) > 0 else int(recommended_cpu)
                     if int(cpu) <= recommended_cpu:
                         cpu = "\033[33m" + cpu + "\033[0m"
