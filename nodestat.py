@@ -84,11 +84,26 @@ def get_slutm_jobs():
         job_info[job_id]['tres'] = tres
         
     return job_info
-    
+
+def get_node_default_values():
+    default = {}
+    with open("/etc/slurm/slurm.conf", "r") as f:
+        lines = f.readlines()
+        for line in lines:
+            if "Nodes=" in line:
+                node_names = line.split("Nodes=")[1].split(" ")[0].split(",")
+            if "DefMemPerCPU=" in line and "DefCpuPerGPU=" in line:
+                mem = int(line.split("DefMemPerCPU=")[1].split(" ")[0])
+                cpu = int(line.split("DefCpuPerGPU=")[1].split(" ")[0])
+                for node_name in node_names:
+                    default[node_name] = {"DefMemPerCPU": mem, "DefCpuPerGPU": cpu}
+    return default
 
 node_info = get_slurm_node_info()
 if show_jobs:
     job_info = get_slutm_jobs()
+    default_values = get_node_default_values()
+
 print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", " | JOBS" if show_jobs else " "))
 
 
@@ -131,10 +146,10 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
     out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs else " ")
     if show_jobs:
         #squeue -o "%.12u %i %C %b %m" --nodelist=
-
         result = subprocess.run(["squeue", "-o", " %.12u %C %b %m %i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
         text = result.stdout
         text = text.split('\n')
+
         if len(text) > 1:
             for line in text[1:-1]:
                 line = line.strip()
@@ -143,21 +158,17 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
                     jobid = jobid.split('_')[0]
                     gpu = job_info[jobid]['tres']['gres/gpu']
                     mem = job_info[jobid]['tres']['mem']
-                    
+                    mem = parse_mem(mem)
+
                     total_gpu = info['cfg_tres']['gres/gpu']
-
-
-                    recommended_cpu = int(info['cfg_tres']['cpu']) / int(total_gpu) if int(total_gpu) > 0 else int(info['cfg_tres']['cpu'])
-                    recommended_cpu = int(recommended_cpu) * int(gpu) if int(gpu) > 0 else int(recommended_cpu)
+                    recommended_cpu = default_values[node_name]['DefCpuPerGPU'] * int(gpu) if int(gpu) > 0 else 2                
+                    recommended_mem = parse_mem(str(default_values[node_name]['DefMemPerCPU'] * int(cpu)) + "M")
+                    
                     if int(cpu) <= recommended_cpu:
                         cpu = "\033[33m" + cpu + "\033[0m"
                     else: 
                         cpu = "\033[91m" + cpu + "\033[0m"
                     
-                    mem = parse_mem(mem)
-                    recommended_mem = parse_mem(info['cfg_tres']['mem']) / int(info['cfg_tres']['gres/gpu']) if int(info['cfg_tres']['gres/gpu']) > 0 else parse_mem(info['cfg_tres']['mem'])
-                    recommended_mem = math.ceil(recommended_mem)
-                    recommended_mem = int(recommended_mem) * int(gpu) if int(gpu) > 0 else int(recommended_mem)
                     if mem <= recommended_mem:
                         mem = "\033[33m" + str(mem) + "G" + "\033[0m"
                     else:
