@@ -5,9 +5,11 @@ import math
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--jobs", help="show active jobs on the nodes", action="store_true")
+parser.add_argument("-m", "--me", help="show my active jobs", action="store_true")
 
 show_jobs = parser.parse_args().jobs
-
+show_my_jobs = parser.parse_args().me
+assert not (show_jobs and show_my_jobs), "You can't use -j and --me at the same time"
 
 def parse_tres(tres_str):
     tres = {}
@@ -100,11 +102,11 @@ def get_node_default_values():
     return default
 
 node_info = get_slurm_node_info()
-if show_jobs:
+if show_jobs or show_my_jobs:
     job_info = get_slutm_jobs()
     default_values = get_node_default_values()
 
-print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", " | JOBS" if show_jobs else " "))
+print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", " | JOBS" if show_jobs or show_my_jobs else " "))
 
 
 for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']):
@@ -143,10 +145,13 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
         available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
 
     
-    out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs else " ")
-    if show_jobs:
-        #squeue -o "%.12u %i %C %b %m" --nodelist=
-        result = subprocess.run(["squeue", "-o", " %.12u %C %b %m %i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+    out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs else " ")
+    if show_jobs or show_my_jobs:
+        if show_jobs:
+            result = subprocess.run(["squeue", "-o", " %.12u %C %b %m %i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+        if show_my_jobs:
+            result = subprocess.run(["squeue", "-o", " %.12j %C %b %m %i", "--me" ,"--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+        
         text = result.stdout
         text = text.split('\n')
 
@@ -186,4 +191,5 @@ for node_name, info in sorted(node_info.items(), key=lambda x: x[1]['partition']
 
                     out += f"{user}({res}), "
             out = out[:-2] if out.endswith(", ") else out
+
     print(out)
