@@ -220,9 +220,10 @@ for partition in partitions:
         for line in queued_jobs:
             user, jobid, reason = line.split()
             #yellow reason
+            reason = reason[1:-1]
             reason = "\033[33m" + reason + "\033[0m"
 
-            res = f"{user}{reason}"
+            res = f"{user}({reason})"
             #italic
             res = "\033[3m" + res + "\033[0m"
             out += f"{res}, "
