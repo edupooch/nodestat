@@ -226,6 +226,7 @@ for partition in partitions:
             #italic
             res = "\033[3m" + res + "\033[0m"
             out += f"{res}, "
-            out = out[:-2] if out.endswith(", ") else out
-            print(out)
+        
+        out = out[:-2] if out.endswith(", ") else out
+        print(out)
                         
