@@ -12,7 +12,6 @@ show_jobs = parser.parse_args().jobs
 show_my_jobs = parser.parse_args().me
 show_queue = parser.parse_args().queue
 
-assert not (show_jobs and show_my_jobs), "You can't use -j and --me at the same time"
 
 def parse_tres(tres_str):
     tres = {}
