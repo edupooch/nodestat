@@ -217,17 +217,16 @@ for partition in partitions:
                         queued_jobs.append(line)
         if len(queued_jobs) > 0:
             out = " ᶫ"
-        for line in queued_jobs:
-            user, jobid, reason = line.split()
-            #yellow reason
-            reason = reason[1:-1]
-            reason = "\033[33m" + reason + "\033[0m"
-
-            res = f"{user}({reason})"
-            #italic
-            res = "\033[3m" + res + "\033[0m"
-            out += f"{res}, "
-        
-        out = out[:-2] if out.endswith(", ") else out
-        print(out)
+            for line in queued_jobs:
+                user, jobid, reason = line.split()
+                #yellow reason
+                reason = reason[1:-1]
+                reason = "\033[33m" + reason + "\033[0m"
+                res = f"{user}({reason})"
+                #italic
+                res = "\033[3m" + res + "\033[0m"
+                out += f"{res}, "
+            
+            out = out[:-2] if out.endswith(", ") else out
+            print(out)
                         
