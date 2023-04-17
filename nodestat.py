@@ -211,21 +211,24 @@ for partition in partitions:
             for line in text[1:-1]:
                 line = line.strip()
                 if line != "":
-                    user, jobid, reason = line.split()
+                    reason = line.split()[2]
                     if reason.startswith("("):
                         queued_jobs.append(line)
         if len(queued_jobs) > 0:
             out = " ᶫ"
             for line in queued_jobs:
-                user, jobid, reason = line.split()
+                info = line.split()
+                user = info[0]
+                jobid = info[1].split('_')[0]
+                reason = " ".join(info[2:])
                 #yellow reason
                 reason = reason[1:-1]
                 reason = "\033[33m" + reason + "\033[0m"
                 res = f"{user}({reason})"
                 #italic
                 res = "\033[3m" + res + "\033[0m"
-                out += f"{res}, "
-            
-            out = out[:-2] if out.endswith(", ") else out
+                out += f"{res}-"
+                
+            out = out[:-1] if out.endswith("-") else out
             print(out)
                         
