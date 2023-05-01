@@ -75,7 +75,7 @@ def get_slutm_jobs():
     job_info = {}
     for job in job_str:
         job = job.strip()
-        if job == '':
+        if len(job.split('JobId=')) == 1:
             continue
         job_id = job.split('JobId=')[1].split(' ')[0]
         job_info[job_id] = {}
@@ -117,7 +117,7 @@ for partition in partitions:
     info_partition = [x for x in node_info.items() if x[1]['partition'] == partition]
     for node_name, info in info_partition:
         available_cpu = int(info['cfg_tres']['cpu']) - int(info['alloc_tres']['cpu'])
-        total_cpu = int(info['cfg_tres']['cpu'])
+        total_cpu = int(info['cfg_tres']['cpu'])        
         total_cpu = "\033[90m" + "/" + str(total_cpu) + "\033[0m"
         if available_cpu == 0:
             available_cpu = "\033[91m" + str(available_cpu) + "\033[0m"
@@ -132,6 +132,12 @@ for partition in partitions:
             available_gpu = "\033[91m" + str(available_gpu) + "\033[0m"
         else:
             available_gpu = "\033[32m" + str(available_gpu) + "\033[0m"
+        
+        # on cpu servers replace 0/0 with -
+        if int(info['cfg_tres']['gres/gpu']) == 0:
+            available_gpu =  "\033[91m" + " " + "\033[0m"
+            total_gpu = "\033[90m" + "-" + " " + "\033[0m"        
+
         available_gpu = f"{available_gpu}{total_gpu}"
 
         available_mem = parse_mem(info['cfg_tres']['mem']) - parse_mem(info['alloc_tres']['mem'])
