@@ -7,10 +7,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--jobs", help="show active jobs on the nodes", action="store_true")
 parser.add_argument("-m", "--me", help="show only my jobs", action="store_true")
 parser.add_argument("-q", "--queue", help="show jobs in the queue", action="store_true")
+parser.add_argument("-t", "--total", help="show total resources", action="store_true")
 
 show_jobs = parser.parse_args().jobs
 show_my_jobs = parser.parse_args().me
 show_queue = parser.parse_args().queue
+show_total = parser.parse_args().total
 
 
 def parse_tres(tres_str):
@@ -96,9 +98,12 @@ def get_node_default_values():
         for line in lines:
             if "Nodes=" in line:
                 node_names = line.split("Nodes=")[1].split(" ")[0].split(",")
-            if "DefMemPerCPU=" in line and "DefCpuPerGPU=" in line:
-                mem = int(line.split("DefMemPerCPU=")[1].split(" ")[0])
-                cpu = int(line.split("DefCpuPerGPU=")[1].split(" ")[0])
+                mem, cpu = 0, 0
+                if "DefMemPerCPU=" in line: 
+                    mem = int(line.split("DefMemPerCPU=")[1].split(" ")[0])
+                if "DefCpuPerGPU=" in line:
+                    cpu = int(line.split("DefCpuPerGPU=")[1].split(" ")[0])
+
                 for node_name in node_names:
                     default[node_name] = {"DefMemPerCPU": mem, "DefCpuPerGPU": cpu}
     return default
@@ -113,11 +118,23 @@ print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", 
 partitions = set([info['partition'] for node_name, info in node_info.items()])
 partitions = sorted(partitions)
 
+global_total_cpu = 0
+global_total_gpu = 0
+global_total_mem = 0
+global_available_cpu = 0
+global_available_gpu = 0
+global_available_mem = 0
+global_total_nodes = 0
+
 for partition in partitions:
     info_partition = [x for x in node_info.items() if x[1]['partition'] == partition]
     for node_name, info in info_partition:
+        global_total_nodes += 1
         available_cpu = int(info['cfg_tres']['cpu']) - int(info['alloc_tres']['cpu'])
-        total_cpu = int(info['cfg_tres']['cpu'])        
+        total_cpu = int(info['cfg_tres']['cpu'])    
+        global_available_cpu += available_cpu
+        global_total_cpu += total_cpu
+
         total_cpu = "\033[90m" + "/" + str(total_cpu) + "\033[0m"
         if available_cpu == 0:
             available_cpu = "\033[91m" + str(available_cpu) + "\033[0m"
@@ -127,6 +144,8 @@ for partition in partitions:
 
         available_gpu = int(info['cfg_tres']['gres/gpu']) - int(info['alloc_tres']['gres/gpu'])
         total_gpu = int(info['cfg_tres']['gres/gpu'])
+        global_available_gpu += available_gpu
+        global_total_gpu += total_gpu
         total_gpu = "\033[90m" + "/" + str(total_gpu) + "\033[0m"
         if available_gpu == 0:
             available_gpu = "\033[91m" + str(available_gpu) + "\033[0m"
@@ -142,6 +161,9 @@ for partition in partitions:
 
         available_mem = parse_mem(info['cfg_tres']['mem']) - parse_mem(info['alloc_tres']['mem'])
         total_mem = parse_mem(info['cfg_tres']['mem'])
+        global_available_mem += available_mem
+        global_total_mem += total_mem
+
         total_mem = "\033[90m" + "/" + str(total_mem) + "\033[0m"
         if available_mem == 0:
             available_mem = "\033[91m" + str(available_mem) + "\033[0m"
@@ -237,4 +259,28 @@ for partition in partitions:
                 
             out = out[:-1] if out.endswith("-") else out
             print(out)
-                        
+
+if show_total:
+    #format global info
+    global_total_cpu = "\033[90m" + "/" + str(global_total_cpu) + "\033[0m"
+    if global_available_cpu == 0:
+        global_available_cpu = "\033[91m" + str(global_available_cpu) + "\033[0m"
+    else:
+        global_available_cpu = "\033[32m" + str(global_available_cpu) + "\033[0m"
+    global_available_cpu = f"{global_available_cpu}{global_total_cpu}"
+
+    global_total_gpu = "\033[90m" + "/" + str(global_total_gpu) + "\033[0m"
+    if global_available_gpu == 0:
+        global_available_gpu = "\033[91m" + str(global_available_gpu) + "\033[0m"
+    else:
+        global_available_gpu = "\033[32m" + str(global_available_gpu) + "\033[0m"
+    global_available_gpu = f"{global_available_gpu}{global_total_gpu}"
+
+    global_total_mem = "\033[90m" + "/" + str(global_total_mem) + "\033[0m"
+    if global_available_mem == 0:
+        global_available_mem = "\033[91m" + str(global_available_mem) + "\033[0m"
+    else:
+        global_available_mem = "\033[32m" + str(global_available_mem) + "\033[0m"
+    global_available_mem = f"{global_available_mem}{global_total_mem}"
+    global_ = "{:<15}{:<15}{:<30}{:<28}{:<26}".format("TOTAL", f" ", global_available_cpu, global_available_gpu, global_available_mem)
+    print(global_)
