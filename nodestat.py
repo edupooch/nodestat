@@ -117,6 +117,10 @@ print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", 
 
 partitions = set([info['partition'] for node_name, info in node_info.items()])
 partitions = sorted(partitions)
+if "cpu" in partitions:
+    partitions.remove("cpu")
+    partitions.append("cpu")
+
 
 global_total_cpu = 0
 global_total_gpu = 0
