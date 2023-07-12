@@ -185,10 +185,10 @@ for partition in partitions:
         out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs else " ")
         if show_jobs or show_my_jobs:
             if show_jobs:
-                result = subprocess.run(["squeue", "-o", " %.12u %C %b %m %i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+                result = subprocess.run(["squeue", "-o", "%.12u,%C,%b,%m,%i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
             if show_my_jobs:
-                result = subprocess.run(["squeue", "-o", " %.12j %C %b %m %i", "--me" ,"--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
-            
+                result = subprocess.run(["squeue", "-o", "%.12j,%C,%b,%m,%i", "--me", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+
             text = result.stdout
             text = text.split('\n')
 
@@ -196,7 +196,12 @@ for partition in partitions:
                 for line in text[1:-1]:
                     line = line.strip()
                     if line != "":
-                        user, cpu, gpu, mem, jobid = line.split()
+                        values = line.split(',')
+                        user = values[0]
+                        cpu = values[1]
+                        gpu = values[2]
+                        mem = values[3]
+                        jobid = values[4]
                         jobid = jobid.split('_')[0]
                         gpu = job_info[jobid]['tres']['gres/gpu']
                         mem = job_info[jobid]['tres']['mem']
