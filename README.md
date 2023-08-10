@@ -25,5 +25,16 @@ rtx2080ti_sm   node10         22/24       1/2       72/89    | user16(2:1:8G)
 rtx8000        node11         34/40       2/4       209/239  | user7(2:1:10G), user7(4:1:20G)
 ```
 
+To show the queued jobs for each partition:
+```
+nodestat -q
+```
+
+To show only current user's jobs
+```
+nodestat -m
+```
+
+
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
