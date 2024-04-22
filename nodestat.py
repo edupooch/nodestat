@@ -178,7 +178,11 @@ for partition in partitions:
         state = info['state']
 
         if state != 'IDLE' and state != 'MIXED' and state != 'ALLOCATED':
-            available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+            if "RESERVED" in state:
+                available_cpu = "\033[90m"  + "RESERVED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+            else:
+                available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+            
             available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
             available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
 
