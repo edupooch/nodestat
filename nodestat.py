@@ -2,18 +2,21 @@
 import subprocess
 import argparse
 import math
+import re 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--jobs", help="show active jobs on the nodes", action="store_true")
 parser.add_argument("-m", "--me", help="show only my jobs", action="store_true")
 parser.add_argument("-q", "--queue", help="show jobs in the queue", action="store_true")
 parser.add_argument("-t", "--total", help="show total resources", action="store_true")
+parser.add_argument("-r", "--reservation", help="show resources inside reservation")
 
-show_jobs = parser.parse_args().jobs
-show_my_jobs = parser.parse_args().me
-show_queue = parser.parse_args().queue
-show_total = parser.parse_args().total
-
+args = parser.parse_args()
+show_jobs = args.jobs
+show_my_jobs = args.me
+show_queue = args.queue
+show_total = args.total
+reservation_name = args.reservation
 
 def parse_tres(tres_str):
     tres = {}
@@ -71,7 +74,7 @@ def parse_mem(mem_str):
         mem = float(mem_str[:-1])
     return int(mem)
 
-def get_slutm_jobs():
+def get_slurm_jobs():
     result = subprocess.run(["scontrol", "show", "job"], stdout=subprocess.PIPE, universal_newlines=True)
     job_str = result.stdout.split('\n\n')
     job_info = {}
@@ -108,10 +111,40 @@ def get_node_default_values():
                     default[node_name] = {"DefMemPerCPU": mem, "DefCpuPerGPU": cpu}
     return default
 
+def get_nodes_in_reservation(reservation):
+    command = f"scontrol show res {reservation}"
+    result = subprocess.run(command.split(), stdout=subprocess.PIPE, universal_newlines=True)
+    nodes_line = [line for line in result.stdout.split('\n') if line.strip().startswith('Nodes=')]
+
+    if nodes_line:
+        nodes_str = nodes_line[0].split('=')[1].strip()
+        nodes = []
+        
+        if '[' in nodes_str:
+            base_name = nodes_str.split('[')[0]
+            ranges = nodes_str.split('[')[1].split(']')[0].split(',')
+            for item in ranges:
+                if '-' in item:
+                    start, end = map(int, item.split('-'))
+                    nodes.extend([f"{base_name}{i}" for i in range(start, end + 1)])
+                else:
+                    nodes.append(f"{base_name}{item}")
+        else:
+            nodes = nodes_str.split(',')
+        
+        return nodes
+    
+    return []
+
+
 node_info = get_slurm_node_info()
 if show_jobs or show_my_jobs:
-    job_info = get_slutm_jobs()
+    job_info = get_slurm_jobs()
     default_values = get_node_default_values()
+
+if reservation_name:
+    reservation_nodes = get_nodes_in_reservation(reservation_name)
+    node_info = {node: info for node, info in node_info.items() if node in reservation_nodes}
 
 print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", " | JOBS" if show_jobs or show_my_jobs else " "))
 
@@ -120,7 +153,6 @@ partitions = sorted(partitions)
 if "cpu" in partitions:
     partitions.remove("cpu")
     partitions.append("cpu")
-
 
 global_total_cpu = 0
 global_total_gpu = 0
@@ -173,19 +205,20 @@ for partition in partitions:
             available_mem = "\033[91m" + str(available_mem) + "\033[0m"
         else:
             available_mem = "\033[32m" + str(available_mem) + "\033[0m"
-
+ 
         available_mem = f"{available_mem}{total_mem}"
         state = info['state']
-
+        
         if state != 'IDLE' and state != 'MIXED' and state != 'ALLOCATED':
-            if "RESERVED" in state:
-                available_cpu = "\033[90m"  + "RESERVED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
-            else:
-                available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
-            
-            available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
-            available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
-
+            if not reservation_name:
+                if "RESERVED" in state:
+                    available_cpu = "\033[90m"  + "RESERVED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+                else:
+                    available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+                
+                available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
+                available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
+ 
         out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs else " ")
         if show_jobs or show_my_jobs:
             if show_jobs:
