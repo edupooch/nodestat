@@ -1,6 +1,14 @@
 # Nodestat
 Nodestat is a command-line tool that shows available resources in a slurm cluster. It displays node statistics such as CPU, GPU, and memory usage, as well as the list of jobs running on each node.
 
+## Installation
+
+You can install nodestat directly from the GitHub repository using pip.
+
+```
+pip install git+https://github.com/edupooch/nodestat.git
+```
+
 ## Usage
 To display the list of nodes with the number of jobs running on each node, use the -j flag:
 
@@ -33,6 +41,16 @@ nodestat -q
 To show only current user's jobs
 ```
 nodestat -m
+```
+
+To show total available resources
+```
+nodestat -t
+```
+
+To show resources inside a reservation
+```
+nodestat -r reservation_name
 ```
 
 
