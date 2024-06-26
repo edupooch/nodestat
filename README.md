@@ -1,6 +1,8 @@
 # Nodestat
 Nodestat is a command-line tool that shows available resources in a slurm cluster. It displays node statistics such as CPU, GPU, and memory usage, as well as the list of jobs running on each node.
 
+![nodestat](https://github.com/edupooch/nodestat/assets/13384210/cb4cc60c-c0c0-46c7-98d4-76022d24dca3)
+
 ## Installation
 
 You can install nodestat directly from the GitHub repository using pip.
