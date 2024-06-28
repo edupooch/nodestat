@@ -75,7 +75,10 @@ def get_slurm_jobs():
         job_info[job_id]['state'] = job.split('JobState=')[1].split(' ')[0]
         job_info[job_id]['user'] = job.split('UserId=')[1].split(' ')[0].split('(')[0]
         #TRES 
-        tres_str = job.split('TRES=')[1].split(' ')[0]
+        if len(job.split('AllocTRES=')) > 0:
+            tres_str = job.split('AllocTRES=')[1].split(' ')[0]
+        else:
+            tres_str = job.split('TRES=')[1].split(' ')[0]
         if 'null'in tres_str:
             tres_str = 'cpu=0,mem=0G,gres/gpu=0'
         tres = parse_tres(tres_str)
