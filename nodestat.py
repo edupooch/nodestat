@@ -172,24 +172,30 @@ def main():
         for node_name, info in info_partition:
             global_total_nodes += 1
             available_cpu = int(info['cfg_tres']['cpu']) - int(info['alloc_tres']['cpu'])
-            total_cpu = int(info['cfg_tres']['cpu'])    
+            int_total_cpu = int(info['cfg_tres']['cpu'])    
             global_available_cpu += available_cpu
-            global_total_cpu += total_cpu
+            global_total_cpu += int_total_cpu
 
-            total_cpu = "\033[90m" + "/" + str(total_cpu) + "\033[0m"
+            total_cpu = "\033[90m" + "/" + str(int_total_cpu) + "\033[0m"
             if available_cpu == 0:
                 available_cpu = "\033[91m" + str(available_cpu) + "\033[0m"
+            elif available_cpu < 0.5 * int_total_cpu:
+                available_cpu = "\033[33m" + str(available_cpu) + "\033[0m"
             else:
                 available_cpu = "\033[32m" + str(available_cpu) + "\033[0m"
             available_cpu = f"{available_cpu}{total_cpu}"
 
             available_gpu = int(info['cfg_tres']['gres/gpu']) - int(info['alloc_tres']['gres/gpu'])
-            total_gpu = int(info['cfg_tres']['gres/gpu'])
+            int_total_gpu = int(info['cfg_tres']['gres/gpu'])
             global_available_gpu += available_gpu
-            global_total_gpu += total_gpu
-            total_gpu = "\033[90m" + "/" + str(total_gpu) + "\033[0m"
+            global_total_gpu += int_total_gpu
+            
+            total_gpu = "\033[90m" + "/" + str(int_total_gpu) + "\033[0m"
+
             if available_gpu == 0:
                 available_gpu = "\033[91m" + str(available_gpu) + "\033[0m"
+            elif available_gpu < 0.5 * int_total_gpu:
+                available_gpu = "\033[33m" + str(available_gpu) + "\033[0m"
             else:
                 available_gpu = "\033[32m" + str(available_gpu) + "\033[0m"
             
@@ -313,16 +319,22 @@ def main():
 
     if show_total:
         #format global info
-        global_total_cpu = "\033[90m" + "/" + str(global_total_cpu) + "\033[0m"
+        int_global_total_cpu = int(global_total_cpu)
+        global_total_cpu = "\033[90m" + "/" + str(int_global_total_cpu) + "\033[0m"
         if global_available_cpu == 0:
             global_available_cpu = "\033[91m" + str(global_available_cpu) + "\033[0m"
+        elif global_available_cpu < 0.5 * int_global_total_cpu:
+            global_available_cpu = "\033[33m" + str(global_available_cpu) + "\033[0m"
         else:
             global_available_cpu = "\033[32m" + str(global_available_cpu) + "\033[0m"
         global_available_cpu = f"{global_available_cpu}{global_total_cpu}"
 
-        global_total_gpu = "\033[90m" + "/" + str(global_total_gpu) + "\033[0m"
+        int_global_total_gpu = int(global_total_gpu)
+        global_total_gpu = "\033[90m" + "/" + str(int_global_total_gpu) + "\033[0m"
         if global_available_gpu == 0:
             global_available_gpu = "\033[91m" + str(global_available_gpu) + "\033[0m"
+        elif global_available_gpu < 0.5 * int_global_total_gpu:
+            global_available_gpu = "\033[33m" + str(global_available_gpu) + "\033[0m"
         else:
             global_available_gpu = "\033[32m" + str(global_available_gpu) + "\033[0m"
         global_available_gpu = f"{global_available_gpu}{global_total_gpu}"
