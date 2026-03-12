@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='nodestat',
-    version='0.14',
+    version='0.15',
     py_modules=['nodestat'],
     entry_points={
         'console_scripts': [

@@ -250,7 +250,7 @@ def main():
                             gpu = values[2]
                             mem = values[3]
                             jobid = values[4]
-                            jobid = jobid.split('_')[0]
+                            jobid = jobid.split('_')[0].split('+')[0]
                             gpu = job_info[jobid]['tres']['gres/gpu']
                             mem = job_info[jobid]['tres']['mem']
                             mem = parse_mem(mem)
@@ -304,7 +304,7 @@ def main():
                 for line in queued_jobs:
                     info = line.split()
                     user = info[0]
-                    jobid = info[1].split('_')[0]
+                    jobid = info[1].split('_')[0].split('+')[0]
                     reason = " ".join(info[2:])
                     #yellow reason
                     reason = reason[1:-1]
