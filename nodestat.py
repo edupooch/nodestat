@@ -83,6 +83,15 @@ def get_slurm_jobs():
             tres_str = 'cpu=0,mem=0G,gres/gpu=0'
         tres = parse_tres(tres_str)
         job_info[job_id]['tres'] = tres
+        # Het-jobs: squeue uses <HetJobId>+<HetJobOffset> notation (e.g. 360398+1)
+        # but scontrol assigns a real separate JobId (e.g. 360399).
+        # Index this job under the squeue notation so lookups find the right component.
+        if 'HetJobId=' in job and 'HetJobOffset=' in job:
+            het_job_id = job.split('HetJobId=')[1].split(' ')[0]
+            het_offset = job.split('HetJobOffset=')[1].split(' ')[0]
+            het_key = f"{het_job_id}+{het_offset}"
+            if het_key != job_id:  # skip component 0 (offset=0, same as base id)
+                job_info[het_key] = job_info[job_id]
         
     return job_info
 
@@ -250,7 +259,9 @@ def main():
                             gpu = values[2]
                             mem = values[3]
                             jobid = values[4]
-                            jobid = jobid.split('_')[0].split('+')[0]
+                            jobid_no_array = jobid.split('_')[0]   # strip array index, keep +N
+                            jobid_base = jobid_no_array.split('+')[0]  # strip het-job component
+                            jobid = jobid_no_array if jobid_no_array in job_info else jobid_base
                             gpu = job_info[jobid]['tres']['gres/gpu']
                             mem = job_info[jobid]['tres']['mem']
                             mem = parse_mem(mem)
