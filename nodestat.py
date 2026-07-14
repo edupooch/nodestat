@@ -19,8 +19,36 @@ def parse_tres(tres_str):
         tres['gres/gpu'] = '0'
     return tres
 
+def parse_gres(gres_str):
+    """Parse Gres= or GresUsed= string into {gpu_type: count} dict."""
+    result = {}
+    if not gres_str or gres_str in ('(null)', 'N/A'):
+        return result
+    # Strip all parenthetical suffixes (e.g. (IDX:0,1,2)) BEFORE splitting by comma
+    # so that commas inside parens don't corrupt the split
+    gres_str = re.sub(r'\([^)]*\)', '', gres_str)
+    for item in gres_str.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        parts = item.split(':')
+        if not parts or parts[0] != 'gpu':
+            continue
+        if len(parts) == 3:
+            gpu_type, count_str = parts[1], parts[2]
+        elif len(parts) == 2:
+            gpu_type, count_str = 'gpu', parts[1]
+        else:
+            continue
+        try:
+            result[gpu_type] = result.get(gpu_type, 0) + int(count_str)
+        except ValueError:
+            pass
+    return result
+
 def get_slurm_node_info():
     node_info = {}
+    node_name = None
     command = "scontrol show node"
     result = subprocess.run(command.split(), stdout=subprocess.PIPE, universal_newlines=True)
 
@@ -49,9 +77,22 @@ def get_slurm_node_info():
         elif line.startswith('State'):
             state = line.split('=')[1].split(' ')[0].strip()
             node_info[node_name]['state'] = state
+        # Gres/GresUsed: use regex since they may share a line with other fields
+        if node_name and 'Gres=' in line and 'CfgTRES' not in line and 'AllocTRES' not in line:
+            m = re.search(r'\bGres=(\S+)', line)
+            if m:
+                node_info[node_name]['gres'] = parse_gres(m.group(1))
+        if node_name and 'GresUsed=' in line:
+            m = re.search(r'GresUsed=(\S+)', line)
+            if m:
+                node_info[node_name]['gres_used'] = parse_gres(m.group(1))
     
     # Exclude nodes not assigned to any partition
     node_info = {k: v for k, v in node_info.items() if 'partition' in v}
+    # Ensure gres/gres_used always present
+    for v in node_info.values():
+        v.setdefault('gres', {})
+        v.setdefault('gres_used', {})
     return node_info
 
 def parse_mem(mem_str):
@@ -73,7 +114,8 @@ def get_slurm_jobs():
             continue
         job_id = job.split('JobId=')[1].split(' ')[0]
         job_info[job_id] = {}
-        job_info[job_id]['nodes'] = job.split(' NodeList=')[1].split(' ')[0].strip().split(',')
+        node_list_match = re.search(r'\sNodeList=(\S+)', job)
+        job_info[job_id]['nodes'] = node_list_match.group(1).split(',') if node_list_match else []
         job_info[job_id]['state'] = job.split('JobState=')[1].split(' ')[0]
         job_info[job_id]['user'] = job.split('UserId=')[1].split(' ')[0].split('(')[0]
         #TRES 
@@ -145,6 +187,7 @@ def main():
     parser.add_argument("-q", "--queue", help="show jobs in the queue", action="store_true")
     parser.add_argument("-t", "--total", help="show total resources", action="store_true")
     parser.add_argument("-r", "--reservation", help="show resources inside reservation")
+    parser.add_argument("-g", "--gpu", help="show only GPU nodes with detailed per-type GPU breakdown", action="store_true")
 
     args = parser.parse_args()
     show_jobs = args.jobs
@@ -152,17 +195,31 @@ def main():
     show_queue = args.queue
     show_total = args.total
     reservation_name = args.reservation
+    show_gpu_detail = args.gpu
 
     node_info = get_slurm_node_info()
     if show_jobs or show_my_jobs:
         job_info = get_slurm_jobs()
         default_values = get_node_default_values()
+    elif show_gpu_detail:
+        job_info = get_slurm_jobs()
 
     if reservation_name:
         reservation_nodes = get_nodes_in_reservation(reservation_name)
         node_info = {node: info for node, info in node_info.items() if node in reservation_nodes}
 
-    print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", " | JOBS" if show_jobs or show_my_jobs else " "))
+    if show_gpu_detail:
+        node_info = {k: v for k, v in node_info.items() if int(v.get('cfg_tres', {}).get('gres/gpu', '0')) > 0}
+
+    if show_gpu_detail and (show_jobs or show_my_jobs):
+        suffix = " | JOBS + GPU"
+    elif show_gpu_detail:
+        suffix = " | GPU DETAIL"
+    elif show_jobs or show_my_jobs:
+        suffix = " | JOBS"
+    else:
+        suffix = " "
+    print("{:<15}{:<15}{:<12}{:<10}{:<8}{:<10}".format("PARTITION", "NODE", "CPUS", "GPUS", "MEM (G)", suffix))
 
     partitions = set([info['partition'] for node_name, info in node_info.items()])
     partitions = sorted(partitions)
@@ -190,7 +247,7 @@ def main():
             total_cpu = "\033[90m" + "/" + str(int_total_cpu) + "\033[0m"
             if available_cpu == 0:
                 available_cpu = "\033[91m" + str(available_cpu) + "\033[0m"
-            elif available_cpu < 0.5 * int_total_cpu:
+            elif available_cpu <= 0.5 * int_total_cpu:
                 available_cpu = "\033[33m" + str(available_cpu) + "\033[0m"
             else:
                 available_cpu = "\033[32m" + str(available_cpu) + "\033[0m"
@@ -205,7 +262,7 @@ def main():
 
             if available_gpu == 0:
                 available_gpu = "\033[91m" + str(available_gpu) + "\033[0m"
-            elif available_gpu < 0.5 * int_total_gpu:
+            elif available_gpu <= 0.5 * int_total_gpu:
                 available_gpu = "\033[33m" + str(available_gpu) + "\033[0m"
             else:
                 available_gpu = "\033[32m" + str(available_gpu) + "\033[0m"
@@ -241,7 +298,7 @@ def main():
                     available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
                     available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
     
-            out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs else " ")
+            out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs or show_gpu_detail else " ")
             if show_jobs or show_my_jobs:
                 if show_jobs:
                     result = subprocess.run(["squeue", "-o", "%.12u,%C,%b,%m,%i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
@@ -296,7 +353,51 @@ def main():
 
                             out += f"{user}({res}), "
                     out = out[:-2] if out.endswith(", ") else out
-            print(out)
+
+            if show_gpu_detail:
+                gres_cfg = info.get('gres', {})
+                # Aggregate per-MIG-type usage from AllocTRES of running jobs
+                # (more reliable than GresUsed= which may not break down by MIG type)
+                mig_used = {}
+                for jdata in job_info.values():
+                    if jdata.get('state') != 'RUNNING':
+                        continue
+                    if node_name not in jdata.get('nodes', []):
+                        continue
+                    for key, val in jdata['tres'].items():
+                        if key.startswith('gres/gpu:'):
+                            gpu_type = key.split(':', 1)[1]
+                            try:
+                                mig_used[gpu_type] = mig_used.get(gpu_type, 0) + int(val)
+                            except ValueError:
+                                pass
+                # Fall back to GresUsed= for non-MIG nodes
+                if not any(t in gres_cfg for t in mig_used):
+                    mig_used = info.get('gres_used', {})
+                detail_parts = []
+                for gpu_type, total in sorted(gres_cfg.items()):
+                    used = mig_used.get(gpu_type, 0)
+                    free = total - used
+                    if free == 0:
+                        color = "\033[91m"
+                    elif free <= 0.5 * total:
+                        color = "\033[33m"
+                    else:
+                        color = "\033[32m"
+                    reset = "\033[0m"
+                    gray = "\033[90m"
+                    white = "\033[97m"
+                    detail_parts.append(f"{white}{gpu_type}({reset}{color}{free}{reset}{gray}/{total}{reset}{white}){reset}")
+                gpu_detail_str = "  ".join(detail_parts)
+                if show_jobs or show_my_jobs:
+                    # Jobs are already on the main line; print GPU detail as a sub-line
+                    print(out)
+                    print(f"   \u2514 {gpu_detail_str}")
+                else:
+                    out += gpu_detail_str
+                    print(out)
+            else:
+                print(out)
         
         #print queued jobs
         if show_queue:
@@ -338,7 +439,7 @@ def main():
         global_total_cpu = "\033[90m" + "/" + str(int_global_total_cpu) + "\033[0m"
         if global_available_cpu == 0:
             global_available_cpu = "\033[91m" + str(global_available_cpu) + "\033[0m"
-        elif global_available_cpu < 0.5 * int_global_total_cpu:
+        elif global_available_cpu <= 0.5 * int_global_total_cpu:
             global_available_cpu = "\033[33m" + str(global_available_cpu) + "\033[0m"
         else:
             global_available_cpu = "\033[32m" + str(global_available_cpu) + "\033[0m"
@@ -348,7 +449,7 @@ def main():
         global_total_gpu = "\033[90m" + "/" + str(int_global_total_gpu) + "\033[0m"
         if global_available_gpu == 0:
             global_available_gpu = "\033[91m" + str(global_available_gpu) + "\033[0m"
-        elif global_available_gpu < 0.5 * int_global_total_gpu:
+        elif global_available_gpu <= 0.5 * int_global_total_gpu:
             global_available_gpu = "\033[33m" + str(global_available_gpu) + "\033[0m"
         else:
             global_available_gpu = "\033[32m" + str(global_available_gpu) + "\033[0m"
