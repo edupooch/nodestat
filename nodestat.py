@@ -50,6 +50,8 @@ def get_slurm_node_info():
             state = line.split('=')[1].split(' ')[0].strip()
             node_info[node_name]['state'] = state
     
+    # Exclude nodes not assigned to any partition
+    node_info = {k: v for k, v in node_info.items() if 'partition' in v}
     return node_info
 
 def parse_mem(mem_str):
