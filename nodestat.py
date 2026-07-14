@@ -269,8 +269,9 @@ def main():
                             mem = parse_mem(mem)
 
                             total_gpu = info['cfg_tres']['gres/gpu']
-                            recommended_cpu = default_values[node_name]['DefCpuPerGPU'] * int(gpu) if int(gpu) > 0 else 2                
-                            recommended_mem = parse_mem(str(default_values[node_name]['DefMemPerCPU'] * int(cpu)) + "M")
+                            node_defaults = default_values.get(node_name, {'DefCpuPerGPU': 0, 'DefMemPerCPU': 0})
+                            recommended_cpu = node_defaults['DefCpuPerGPU'] * int(gpu) if int(gpu) > 0 else 2                
+                            recommended_mem = parse_mem(str(node_defaults['DefMemPerCPU'] * int(cpu)) + "M")
                             
                             if int(cpu) <= recommended_cpu:
                                 cpu = "\033[33m" + cpu + "\033[0m"
