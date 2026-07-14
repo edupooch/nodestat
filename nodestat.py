@@ -211,7 +211,9 @@ def main():
     if show_gpu_detail:
         node_info = {k: v for k, v in node_info.items() if int(v.get('cfg_tres', {}).get('gres/gpu', '0')) > 0}
 
-    if show_gpu_detail:
+    if show_gpu_detail and (show_jobs or show_my_jobs):
+        suffix = " | JOBS + GPU"
+    elif show_gpu_detail:
         suffix = " | GPU DETAIL"
     elif show_jobs or show_my_jobs:
         suffix = " | JOBS"
@@ -386,9 +388,16 @@ def main():
                     gray = "\033[90m"
                     white = "\033[97m"
                     detail_parts.append(f"{white}{gpu_type}({reset}{color}{free}{reset}{gray}/{total}{reset}{white}){reset}")
-                out += "  ".join(detail_parts)
-
-            print(out)
+                gpu_detail_str = "  ".join(detail_parts)
+                if show_jobs or show_my_jobs:
+                    # Jobs are already on the main line; print GPU detail as a sub-line
+                    print(out)
+                    print(f"   \u2514 {gpu_detail_str}")
+                else:
+                    out += gpu_detail_str
+                    print(out)
+            else:
+                print(out)
         
         #print queued jobs
         if show_queue:
