@@ -55,6 +55,11 @@ To show resources inside a reservation
 nodestat -r reservation_name
 ```
 
+To show only GPU nodes with a detailed per-type GPU breakdown (including MIG instances):
+```
+nodestat -g
+```
+
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
