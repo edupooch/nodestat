@@ -282,7 +282,7 @@ def main():
                                 else:
                                     mem = "\033[91m" + str(mem) + "G" + "\033[0m"
                             else:
-                                mem = str(mem) + "G"
+                                mem = "\033[33m" + str(mem) + "G" + "\033[0m"
 
                             if gpu == "0": #gray
                                 gpu = "\033[90m" + gpu + "\033[0m"
