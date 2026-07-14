@@ -269,19 +269,20 @@ def main():
                             mem = parse_mem(mem)
 
                             total_gpu = info['cfg_tres']['gres/gpu']
-                            node_defaults = default_values.get(node_name, {'DefCpuPerGPU': 0, 'DefMemPerCPU': 0})
-                            recommended_cpu = node_defaults['DefCpuPerGPU'] * int(gpu) if int(gpu) > 0 else 2                
-                            recommended_mem = parse_mem(str(node_defaults['DefMemPerCPU'] * int(cpu)) + "M")
-                            
-                            if int(cpu) <= recommended_cpu:
-                                cpu = "\033[33m" + cpu + "\033[0m"
-                            else: 
-                                cpu = "\033[91m" + cpu + "\033[0m"
-                            
-                            if mem <= recommended_mem:
-                                mem = "\033[33m" + str(mem) + "G" + "\033[0m"
+                            node_defaults = default_values.get(node_name)
+                            if node_defaults:
+                                recommended_cpu = node_defaults['DefCpuPerGPU'] * int(gpu) if int(gpu) > 0 else 2                
+                                recommended_mem = parse_mem(str(node_defaults['DefMemPerCPU'] * int(cpu)) + "M")
+                                if int(cpu) <= recommended_cpu:
+                                    cpu = "\033[33m" + cpu + "\033[0m"
+                                else: 
+                                    cpu = "\033[91m" + cpu + "\033[0m"
+                                if mem <= recommended_mem:
+                                    mem = "\033[33m" + str(mem) + "G" + "\033[0m"
+                                else:
+                                    mem = "\033[91m" + str(mem) + "G" + "\033[0m"
                             else:
-                                mem = "\033[91m" + str(mem) + "G" + "\033[0m"
+                                mem = str(mem) + "G"
 
                             if gpu == "0": #gray
                                 gpu = "\033[90m" + gpu + "\033[0m"
