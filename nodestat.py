@@ -114,7 +114,8 @@ def get_slurm_jobs():
             continue
         job_id = job.split('JobId=')[1].split(' ')[0]
         job_info[job_id] = {}
-        job_info[job_id]['nodes'] = job.split(' NodeList=')[1].split(' ')[0].strip().split(',')
+        node_list_match = re.search(r'\sNodeList=(\S+)', job)
+        job_info[job_id]['nodes'] = node_list_match.group(1).split(',') if node_list_match else []
         job_info[job_id]['state'] = job.split('JobState=')[1].split(' ')[0]
         job_info[job_id]['user'] = job.split('UserId=')[1].split(' ')[0].split('(')[0]
         #TRES 
@@ -200,6 +201,8 @@ def main():
     if show_jobs or show_my_jobs:
         job_info = get_slurm_jobs()
         default_values = get_node_default_values()
+    elif show_gpu_detail:
+        job_info = get_slurm_jobs()
 
     if reservation_name:
         reservation_nodes = get_nodes_in_reservation(reservation_name)
@@ -351,10 +354,27 @@ def main():
 
             if show_gpu_detail:
                 gres_cfg = info.get('gres', {})
-                gres_used = info.get('gres_used', {})
+                # Aggregate per-MIG-type usage from AllocTRES of running jobs
+                # (more reliable than GresUsed= which may not break down by MIG type)
+                mig_used = {}
+                for jdata in job_info.values():
+                    if jdata.get('state') != 'RUNNING':
+                        continue
+                    if node_name not in jdata.get('nodes', []):
+                        continue
+                    for key, val in jdata['tres'].items():
+                        if key.startswith('gres/gpu:'):
+                            gpu_type = key.split(':', 1)[1]
+                            try:
+                                mig_used[gpu_type] = mig_used.get(gpu_type, 0) + int(val)
+                            except ValueError:
+                                pass
+                # Fall back to GresUsed= for non-MIG nodes
+                if not any(t in gres_cfg for t in mig_used):
+                    mig_used = info.get('gres_used', {})
                 detail_parts = []
                 for gpu_type, total in sorted(gres_cfg.items()):
-                    used = gres_used.get(gpu_type, 0)
+                    used = mig_used.get(gpu_type, 0)
                     free = total - used
                     color = "\033[32m" if free > 0 else "\033[91m"
                     reset = "\033[0m"
