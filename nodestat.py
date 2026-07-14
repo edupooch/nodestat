@@ -356,7 +356,8 @@ def main():
                     color = "\033[32m" if free > 0 else "\033[91m"
                     reset = "\033[0m"
                     gray = "\033[90m"
-                    detail_parts.append(f"{color}{gpu_type}({free}{reset}{gray}/{total}){reset}")
+                    white = "\033[97m"
+                    detail_parts.append(f"{white}{gpu_type}({reset}{color}{free}{reset}{gray}/{total}{reset}{white}){reset}")
                 out += "  ".join(detail_parts)
 
             print(out)
