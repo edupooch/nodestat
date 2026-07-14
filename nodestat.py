@@ -348,10 +348,26 @@ def main():
 
             if show_gpu_detail:
                 gres_cfg = info.get('gres', {})
-                gres_used = info.get('gres_used', {})
+                # Query squeue for actual per-type usage on this node (handles MIG types
+                # which GresUsed= may report only as a total gpu count without type names)
+                sq = subprocess.run(
+                    ["squeue", "-t", "RUNNING", "-h", "-o", "%b", "--nodelist=" + node_name],
+                    stdout=subprocess.PIPE, universal_newlines=True
+                )
+                mig_used = {}
+                for bline in sq.stdout.split('\n'):
+                    bline = bline.strip()
+                    if not bline:
+                        continue
+                    for gpu_type, count in parse_gres(bline).items():
+                        mig_used[gpu_type] = mig_used.get(gpu_type, 0) + count
+                # If squeue gave no typed MIG info, fall back to GresUsed= from node info
+                has_mig_types = any(':' in t or '.' in t for t in mig_used)
+                if not has_mig_types:
+                    mig_used = info.get('gres_used', {})
                 detail_parts = []
                 for gpu_type, total in sorted(gres_cfg.items()):
-                    used = gres_used.get(gpu_type, 0)
+                    used = mig_used.get(gpu_type, 0)
                     free = total - used
                     color = "\033[32m" if free > 0 else "\033[91m"
                     reset = "\033[0m"
