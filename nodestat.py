@@ -245,7 +245,7 @@ def main():
             total_cpu = "\033[90m" + "/" + str(int_total_cpu) + "\033[0m"
             if available_cpu == 0:
                 available_cpu = "\033[91m" + str(available_cpu) + "\033[0m"
-            elif available_cpu < 0.5 * int_total_cpu:
+            elif available_cpu <= 0.5 * int_total_cpu:
                 available_cpu = "\033[33m" + str(available_cpu) + "\033[0m"
             else:
                 available_cpu = "\033[32m" + str(available_cpu) + "\033[0m"
@@ -260,7 +260,7 @@ def main():
 
             if available_gpu == 0:
                 available_gpu = "\033[91m" + str(available_gpu) + "\033[0m"
-            elif available_gpu < 0.5 * int_total_gpu:
+            elif available_gpu <= 0.5 * int_total_gpu:
                 available_gpu = "\033[33m" + str(available_gpu) + "\033[0m"
             else:
                 available_gpu = "\033[32m" + str(available_gpu) + "\033[0m"
@@ -378,7 +378,7 @@ def main():
                     free = total - used
                     if free == 0:
                         color = "\033[91m"
-                    elif free < 0.5 * total:
+                    elif free <= 0.5 * total:
                         color = "\033[33m"
                     else:
                         color = "\033[32m"
@@ -430,7 +430,7 @@ def main():
         global_total_cpu = "\033[90m" + "/" + str(int_global_total_cpu) + "\033[0m"
         if global_available_cpu == 0:
             global_available_cpu = "\033[91m" + str(global_available_cpu) + "\033[0m"
-        elif global_available_cpu < 0.5 * int_global_total_cpu:
+        elif global_available_cpu <= 0.5 * int_global_total_cpu:
             global_available_cpu = "\033[33m" + str(global_available_cpu) + "\033[0m"
         else:
             global_available_cpu = "\033[32m" + str(global_available_cpu) + "\033[0m"
@@ -440,7 +440,7 @@ def main():
         global_total_gpu = "\033[90m" + "/" + str(int_global_total_gpu) + "\033[0m"
         if global_available_gpu == 0:
             global_available_gpu = "\033[91m" + str(global_available_gpu) + "\033[0m"
-        elif global_available_gpu < 0.5 * int_global_total_gpu:
+        elif global_available_gpu <= 0.5 * int_global_total_gpu:
             global_available_gpu = "\033[33m" + str(global_available_gpu) + "\033[0m"
         else:
             global_available_gpu = "\033[32m" + str(global_available_gpu) + "\033[0m"
