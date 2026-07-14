@@ -376,7 +376,12 @@ def main():
                 for gpu_type, total in sorted(gres_cfg.items()):
                     used = mig_used.get(gpu_type, 0)
                     free = total - used
-                    color = "\033[32m" if free > 0 else "\033[91m"
+                    if free == 0:
+                        color = "\033[91m"
+                    elif free < 0.5 * total:
+                        color = "\033[33m"
+                    else:
+                        color = "\033[32m"
                     reset = "\033[0m"
                     gray = "\033[90m"
                     white = "\033[97m"
