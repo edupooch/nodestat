@@ -3,6 +3,7 @@ import subprocess
 import argparse
 import math
 import re 
+import os
 
 
 def parse_tres(tres_str):
@@ -24,6 +25,9 @@ def parse_gres(gres_str):
     result = {}
     if not gres_str or gres_str in ('(null)', 'N/A'):
         return result
+    # Untyped GRES shows up in GresUsed= as gpu:(null):N; drop the (null) type
+    # so it matches Gres=gpu:N
+    gres_str = gres_str.replace(':(null):', ':')
     # Strip all parenthetical suffixes (e.g. (IDX:0,1,2)) BEFORE splitting by comma
     # so that commas inside parens don't corrupt the split
     gres_str = re.sub(r'\([^)]*\)', '', gres_str)
@@ -46,10 +50,38 @@ def parse_gres(gres_str):
             pass
     return result
 
+def expand_hostlist(hostlist):
+    """Expand a Slurm hostlist such as 'gpu[01-03,07],gaia' into node names."""
+    if hostlist in ('', '(null)'):
+        return []
+    nodes = []
+    # split on commas outside brackets
+    for item in re.findall(r'(?:[^,\[]|\[[^\]]*\])+', hostlist):
+        if '[' not in item:
+            nodes.append(item)
+            continue
+        prefix, rest = item.split('[', 1)
+        ranges, suffix = rest.split(']', 1)
+        for r in ranges.split(','):
+            start, _, end = r.partition('-')
+            for i in range(int(start), int(end or start) + 1):
+                # keep zero padding: gpu[01-03] -> gpu01
+                nodes.append(f"{prefix}{i:0{len(start)}d}{suffix}")
+    return nodes
+
+def count_ids(ids):
+    """Count the CPUs in a CPU_IDs list such as '24-31,40-41'."""
+    total = 0
+    for r in ids.split(','):
+        start, _, end = r.partition('-')
+        total += int(end or start) - int(start) + 1
+    return total
+
 def get_slurm_node_info():
     node_info = {}
     node_name = None
-    command = "scontrol show node"
+    # -d: GresUsed= is only printed in the detailed output
+    command = "scontrol -d show node"
     result = subprocess.run(command.split(), stdout=subprocess.PIPE, universal_newlines=True)
 
     for line in result.stdout.split('\n'):
@@ -96,16 +128,30 @@ def get_slurm_node_info():
     return node_info
 
 def parse_mem(mem_str):
+    # Slurm's units are binary: 1G = 1024M
     if mem_str.endswith("M"):
-        mem = float(mem_str[:-1]) / 1000
+        mem = float(mem_str[:-1]) / 1024
     elif mem_str.endswith("K"):
-        mem = float(mem_str[:-1]) / 1000 / 1000
-    else:
+        mem = float(mem_str[:-1]) / 1024 / 1024
+    elif mem_str.endswith("T"):
+        mem = float(mem_str[:-1]) * 1024
+    elif mem_str.endswith("G"):
         mem = float(mem_str[:-1])
-    return int(mem)
+    else:
+        mem = float(mem_str) / 1024  # no unit: MB
+    return mem
+
+def format_mem(mem):
+    """GB with one decimal below 10G, so small jobs don't round to 0."""
+    return f"{mem:.1f}" if mem < 10 else f"{mem:.0f}"
+
+def job_tres_on_node(job, node_name):
+    """TRES a job holds on one node (AllocTRES is the whole job's total)."""
+    return job['per_node'].get(node_name, job['tres'])
 
 def get_slurm_jobs():
-    result = subprocess.run(["scontrol", "show", "job"], stdout=subprocess.PIPE, universal_newlines=True)
+    # -d: prints the per-node allocation (Nodes= CPU_IDs= Mem= GRES=)
+    result = subprocess.run(["scontrol", "-d", "show", "job"], stdout=subprocess.PIPE, universal_newlines=True)
     job_str = result.stdout.split('\n\n')
     job_info = {}
     for job in job_str:
@@ -115,45 +161,50 @@ def get_slurm_jobs():
         job_id = job.split('JobId=')[1].split(' ')[0]
         job_info[job_id] = {}
         node_list_match = re.search(r'\sNodeList=(\S+)', job)
-        job_info[job_id]['nodes'] = node_list_match.group(1).split(',') if node_list_match else []
+        job_info[job_id]['nodes'] = expand_hostlist(node_list_match.group(1)) if node_list_match else []
         job_info[job_id]['state'] = job.split('JobState=')[1].split(' ')[0]
         job_info[job_id]['user'] = job.split('UserId=')[1].split(' ')[0].split('(')[0]
         #TRES 
-        if len(job.split('AllocTRES=')) > 0:
-            tres_str = job.split('AllocTRES=')[1].split(' ')[0]
-        else:
-            tres_str = job.split('TRES=')[1].split(' ')[0]
-        if 'null'in tres_str:
+        # Older Slurm versions print TRES= instead of AllocTRES=
+        # (\b so that ReqTRES= does not match)
+        tres_match = re.search(r'AllocTRES=(\S+)', job) or re.search(r'\bTRES=(\S+)', job)
+        tres_str = tres_match.group(1) if tres_match else '(null)'
+        if 'null' in tres_str:
             tres_str = 'cpu=0,mem=0G,gres/gpu=0'
         tres = parse_tres(tres_str)
         job_info[job_id]['tres'] = tres
-        # Het-jobs: squeue uses <HetJobId>+<HetJobOffset> notation (e.g. 360398+1)
-        # but scontrol assigns a real separate JobId (e.g. 360399).
-        # Index this job under the squeue notation so lookups find the right component.
-        if 'HetJobId=' in job and 'HetJobOffset=' in job:
-            het_job_id = job.split('HetJobId=')[1].split(' ')[0]
-            het_offset = job.split('HetJobOffset=')[1].split(' ')[0]
-            het_key = f"{het_job_id}+{het_offset}"
-            if het_key != job_id:  # skip component 0 (offset=0, same as base id)
-                job_info[het_key] = job_info[job_id]
-        
+        # Multi-node jobs: AllocTRES is the total over all nodes, so keep
+        # what each node holds
+        per_node = {}
+        if len(job_info[job_id]['nodes']) > 1:
+            for nodes, cpu_ids, mem, gres in re.findall(r'^\s*Nodes=(\S+) CPU_IDs=(\S+) Mem=(\d+) GRES=(\S*)', job, re.M):
+                gpus = parse_gres(gres)
+                node_tres = {'cpu': str(count_ids(cpu_ids)), 'mem': f"{mem}M", 'gres/gpu': str(sum(gpus.values()))}
+                node_tres.update({f"gres/gpu:{t}": str(n) for t, n in gpus.items() if t != 'gpu'})
+                for node in expand_hostlist(nodes):
+                    per_node[node] = node_tres
+        job_info[job_id]['per_node'] = per_node
+
     return job_info
 
 def get_node_default_values():
     default = {}
-    with open("/etc/slurm/slurm.conf", "r") as f:
-        lines = f.readlines()
-        for line in lines:
-            if "Nodes=" in line:
-                node_names = line.split("Nodes=")[1].split(" ")[0].split(",")
-                mem, cpu = 0, 0
-                if "DefMemPerCPU=" in line: 
-                    mem = int(line.split("DefMemPerCPU=")[1].split(" ")[0])
-                if "DefCpuPerGPU=" in line:
-                    cpu = int(line.split("DefCpuPerGPU=")[1].split(" ")[0])
+    try:
+        with open(os.environ.get("SLURM_CONF", "/etc/slurm/slurm.conf"), "r") as f:
+            lines = f.readlines()
+    except OSError:
+        return default
+    for line in lines:
+        if "Nodes=" in line:
+            node_names = line.split("Nodes=")[1].split(" ")[0].split(",")
+            mem, cpu = 0, 0
+            if "DefMemPerCPU=" in line: 
+                mem = int(line.split("DefMemPerCPU=")[1].split(" ")[0])
+            if "DefCpuPerGPU=" in line:
+                cpu = int(line.split("DefCpuPerGPU=")[1].split(" ")[0])
 
-                for node_name in node_names:
-                    default[node_name] = {"DefMemPerCPU": mem, "DefCpuPerGPU": cpu}
+            for node_name in node_names:
+                default[node_name] = {"DefMemPerCPU": mem, "DefCpuPerGPU": cpu}
     return default
 
 def get_nodes_in_reservation(reservation):
@@ -162,23 +213,8 @@ def get_nodes_in_reservation(reservation):
     nodes_line = [line for line in result.stdout.split('\n') if line.strip().startswith('Nodes=')]
 
     if nodes_line:
-        nodes_str = nodes_line[0].split('=')[1].strip()
-        nodes = []
-        
-        if '[' in nodes_str:
-            base_name = nodes_str.split('[')[0]
-            ranges = nodes_str.split('[')[1].split(']')[0].split(',')
-            for item in ranges:
-                if '-' in item:
-                    start, end = map(int, item.split('-'))
-                    nodes.extend([f"{base_name}{i}" for i in range(start, end + 1)])
-                else:
-                    nodes.append(f"{base_name}{item}")
-        else:
-            nodes = nodes_str.split(',')
-        
-        return nodes
-    
+        return expand_hostlist(nodes_line[0].split('=')[1].split()[0])
+
     return []
 def main():
     parser = argparse.ArgumentParser()
@@ -274,8 +310,8 @@ def main():
 
             available_gpu = f"{available_gpu}{total_gpu}"
 
-            available_mem = parse_mem(info['cfg_tres']['mem']) - parse_mem(info['alloc_tres']['mem'])
-            total_mem = parse_mem(info['cfg_tres']['mem'])
+            available_mem = int(parse_mem(info['cfg_tres']['mem']) - parse_mem(info['alloc_tres']['mem']))
+            total_mem = int(parse_mem(info['cfg_tres']['mem']))
             global_available_mem += available_mem
             global_total_mem += total_mem
 
@@ -287,13 +323,17 @@ def main():
     
             available_mem = f"{available_mem}{total_mem}"
             state = info['state']
-            
-            if state != 'IDLE' and state != 'MIXED' and state != 'ALLOCATED':
+            # State=<base>[+<flag>...], e.g. MIXED+DRAIN, DOWN+NOT_RESPONDING
+            base_state, *state_flags = state.split('+')
+            blocking_flags = [f for f in state_flags if f in ('DRAIN', 'RESERVED', 'MAINTENANCE', 'FAIL', 'POWERED_DOWN')]
+
+            if base_state not in ('IDLE', 'MIXED', 'ALLOCATED') or blocking_flags:
                 if not reservation_name:
                     if "RESERVED" in state:
                         available_cpu = "\033[90m"  + "RESERVED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
                     else:
-                        available_cpu = "\033[90m"  + "SUSPENDED" + "\033[0m" + "\033[32m" + "" + "\033[0m"
+                        label = blocking_flags[0] if blocking_flags else base_state
+                        available_cpu = "\033[90m"  + label + "\033[0m" + "\033[32m" + "" + "\033[0m"
                     
                     available_gpu = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
                     available_mem = "\033[91m"  + " " + "\033[0m" + "\033[32m" + "" + "\033[0m"
@@ -301,9 +341,9 @@ def main():
             out = "{:<15}{:<15}{:<30}{:<28}{:<26}{}".format(info['partition'], node_name, available_cpu, available_gpu, available_mem, " | " if show_jobs or show_my_jobs or show_gpu_detail else " ")
             if show_jobs or show_my_jobs:
                 if show_jobs:
-                    result = subprocess.run(["squeue", "-o", "%.12u,%C,%b,%m,%i", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+                    result = subprocess.run(["squeue", "-o", "%.12u,%A", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
                 if show_my_jobs:
-                    result = subprocess.run(["squeue", "-o", "%.12j,%C,%b,%m,%i", "--me", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
+                    result = subprocess.run(["squeue", "-o", "%.12j,%A", "--me", "--nodelist=" + node_name], stdout=subprocess.PIPE, universal_newlines=True)
 
                 text = result.stdout
                 text = text.split('\n')
@@ -312,18 +352,20 @@ def main():
                     for line in text[1:-1]:
                         line = line.strip()
                         if line != "":
-                            values = line.split(',')
-                            user = values[0]
-                            cpu = values[1]
-                            gpu = values[2]
-                            mem = values[3]
-                            jobid = values[4]
-                            jobid_no_array = jobid.split('_')[0]   # strip array index, keep +N
-                            jobid_base = jobid_no_array.split('+')[0]  # strip het-job component
-                            jobid = jobid_no_array if jobid_no_array in job_info else jobid_base
-                            gpu = job_info[jobid]['tres']['gres/gpu']
-                            mem = job_info[jobid]['tres']['mem']
-                            mem = parse_mem(mem)
+                            # job names may contain commas: split from the right
+                            # %A: the job's own JobId, also for array
+                            # elements and het-job components
+                            user, jobid = line.rsplit(',', 1)
+                            job = job_info.get(jobid)
+                            if job is None or job['state'] == 'PENDING':
+                                # ended or started between scontrol and squeue
+                                # (an array's last task takes over the base
+                                # JobId of the pending record)
+                                continue
+                            tres = job_tres_on_node(job, node_name)
+                            cpu = tres['cpu']
+                            gpu = tres['gres/gpu']
+                            mem = parse_mem(tres['mem'])
 
                             total_gpu = info['cfg_tres']['gres/gpu']
                             node_defaults = default_values.get(node_name)
@@ -335,11 +377,11 @@ def main():
                                 else: 
                                     cpu = "\033[91m" + cpu + "\033[0m"
                                 if mem <= recommended_mem:
-                                    mem = "\033[33m" + str(mem) + "G" + "\033[0m"
+                                    mem = "\033[33m" + format_mem(mem) + "G" + "\033[0m"
                                 else:
-                                    mem = "\033[91m" + str(mem) + "G" + "\033[0m"
+                                    mem = "\033[91m" + format_mem(mem) + "G" + "\033[0m"
                             else:
-                                mem = "\033[33m" + str(mem) + "G" + "\033[0m"
+                                mem = "\033[33m" + format_mem(mem) + "G" + "\033[0m"
 
                             if gpu == "0": #gray
                                 gpu = "\033[90m" + gpu + "\033[0m"
@@ -364,7 +406,7 @@ def main():
                         continue
                     if node_name not in jdata.get('nodes', []):
                         continue
-                    for key, val in jdata['tres'].items():
+                    for key, val in job_tres_on_node(jdata, node_name).items():
                         if key.startswith('gres/gpu:'):
                             gpu_type = key.split(':', 1)[1]
                             try:
@@ -374,6 +416,10 @@ def main():
                 # Fall back to GresUsed= for non-MIG nodes
                 if not any(t in gres_cfg for t in mig_used):
                     mig_used = info.get('gres_used', {})
+                    # one configured type (e.g. untyped gpu:8): count every
+                    # used GPU against it, whatever type GresUsed reports
+                    if len(gres_cfg) == 1:
+                        mig_used = {next(iter(gres_cfg)): sum(mig_used.values())}
                 detail_parts = []
                 for gpu_type, total in sorted(gres_cfg.items()):
                     used = mig_used.get(gpu_type, 0)
@@ -401,10 +447,12 @@ def main():
         
         #print queued jobs
         if show_queue:
-            result = subprocess.run(["squeue", "-o", " %.12u %i %R", "--partition=" + partition], stdout=subprocess.PIPE, universal_newlines=True)
+            # '|'-separated: job names and reasons may contain spaces
             if show_my_jobs:
-                result = subprocess.run(["squeue", "-o", " %.12j %i %R", "--me" ,"--partition=" + partition], stdout=subprocess.PIPE, universal_newlines=True)
-            
+                result = subprocess.run(["squeue", "-o", "%.12j|%R", "--me" ,"--partition=" + partition], stdout=subprocess.PIPE, universal_newlines=True)
+            else:
+                result = subprocess.run(["squeue", "-o", "%.12u|%R", "--partition=" + partition], stdout=subprocess.PIPE, universal_newlines=True)
+
             text = result.stdout
             text = text.split('\n')
             queued_jobs = []
@@ -412,16 +460,12 @@ def main():
                 for line in text[1:-1]:
                     line = line.strip()
                     if line != "":
-                        reason = line.split()[2]
+                        user, reason = line.rsplit('|', 1)
                         if reason.startswith("("):
-                            queued_jobs.append(line)
+                            queued_jobs.append((user.strip(), reason))
             if len(queued_jobs) > 0:
                 out = " ᶫ"
-                for line in queued_jobs:
-                    info = line.split()
-                    user = info[0]
-                    jobid = info[1].split('_')[0].split('+')[0]
-                    reason = " ".join(info[2:])
+                for user, reason in queued_jobs:
                     #yellow reason
                     reason = reason[1:-1]
                     reason = "\033[33m" + reason + "\033[0m"
